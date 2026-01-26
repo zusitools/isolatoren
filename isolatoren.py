@@ -89,7 +89,7 @@ def angle(v1, v2):
     return np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
 
 
-def process_verknuepfte(node, base_path, parent_T):
+def process_verknuepfte(node, dirname_rel_to_data_dir, parent_T):
     p = parse_vec(node.find("p"))
     phi = parse_vec(node.find("phi"))
 
@@ -145,60 +145,50 @@ def process_verknuepfte(node, base_path, parent_T):
             # )
             changed = True
 
-    # Recurse into nested file
-    nested_path = zusicommon.resolve_file_path(
-        filename, base_path, DATAPATH, DATAPATH_OFFICIAL
-    )
-    assert os.path.isfile(nested_path), f"{base_path}->{filename} not resolved"
-    process_file(nested_path, world_T)
+    if "\\" not in filename:
+        process_file(dirname_rel_to_data_dir, filename, world_T)
+    else:
+        filename = filename.lstrip("\\").replace("\\", os.sep)
+        process_file(*os.path.split(filename), world_T)
 
     return changed
 
 
-def process_file(xml_path, parent_T=np.eye(4)):
+def process_file(dirname_rel_to_data_dir, filename, parent_T=np.eye(4)):
     """Parse and modify a Zusi XML file."""
-    if xml_path in PROCESSED_FILES:
+
+    xml_path_rel = os.path.join(dirname_rel_to_data_dir, filename)
+    if xml_path_rel in PROCESSED_FILES:
         return
-    PROCESSED_FILES.add(xml_path)
+    PROCESSED_FILES.add(xml_path_rel)
+
+    absolute_path = os.path.join(DATAPATH, xml_path_rel)
+    if not os.path.isfile(absolute_path):
+        absolute_path_try1 = absolute_path
+        absolute_path = os.path.join(DATAPATH_OFFICIAL, xml_path_rel)
+        assert os.path.isfile(
+            absolute_path
+        ), f"{xml_path_rel} not resolved: neither {absolute_path_try1} nor {absolute_path} exist"
 
     parser = etree.XMLParser(remove_blank_text=False, strip_cdata=False)
-    tree = etree.parse(xml_path, parser)
+    tree = etree.parse(absolute_path, parser)
     root = tree.getroot()
 
-    base_path = os.path.dirname(xml_path)
+    base_path = os.path.dirname(absolute_path)
 
     changed = False
     for v in root.findall(".//Verknuepfte"):
-        if process_verknuepfte(v, base_path, parent_T):
+        if process_verknuepfte(v, dirname_rel_to_data_dir, parent_T):
             changed = True
 
     # Write back, preserving formatting
     if changed:
-        dest_path = None
-        try:
-            if os.path.normpath(
-                os.path.commonpath([xml_path, DATAPATH])
-            ) == os.path.normpath(DATAPATH):
-                dest_path = os.path.relpath(xml_path, DATAPATH)
-        except ValueError:
-            pass
-        try:
-            if not dest_path and os.path.normpath(
-                os.path.commonpath([xml_path, DATAPATH_OFFICIAL])
-            ) == os.path.normpath(DATAPATH_OFFICIAL):
-                dest_path = os.path.relpath(xml_path, DATAPATH_OFFICIAL)
-        except ValueError:
-            pass
-
-        assert (
-            dest_path is not None
-        ), f"{xml_path} scheint nicht im eigenen oder offiziellen Verzeichnis zu liegen"
-
+        dest_path = os.path.join(dirname_rel_to_data_dir, filename)
         if DRY_RUN:
             print(f"would write {dest_path}")
         else:
             print(f"write {dest_path}")
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            os.makedirs(dirname_rel_to_data_dir, exist_ok=True)
             tree.write(
                 dest_path, encoding="UTF-8", xml_declaration=True, pretty_print=False
             )
@@ -206,4 +196,25 @@ def process_file(xml_path, parent_T=np.eye(4)):
 
 if __name__ == "__main__":
     for f in sys.argv[1:]:
-        process_file(os.path.abspath(f))
+        f = os.path.abspath(f)
+        rel_path = None
+        try:
+            if os.path.normpath(os.path.commonpath([f, DATAPATH])) == os.path.normpath(
+                DATAPATH
+            ):
+                rel_path = os.path.relpath(f, DATAPATH)
+        except ValueError:
+            pass
+        try:
+            if not rel_path and os.path.normpath(
+                os.path.commonpath([f, DATAPATH_OFFICIAL])
+            ) == os.path.normpath(DATAPATH_OFFICIAL):
+                rel_path = os.path.relpath(f, DATAPATH_OFFICIAL)
+        except ValueError:
+            pass
+
+        assert (
+            rel_path is not None
+        ), f"{f} scheint nicht im eigenen oder offiziellen Verzeichnis zu liegen"
+
+        process_file(*os.path.split(rel_path))
