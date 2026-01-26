@@ -89,6 +89,17 @@ def angle(v1, v2):
     return np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
 
 
+def set_attrib_float(node, name, value, digits):
+    value = round(value, digits)
+    if value == 0:
+        try:
+            del node.attrib[name]
+        except KeyError:
+            pass
+    else:
+        node.attrib[name] = str(value).rstrip(".0")
+
+
 def process_verknuepfte(node, dirname_rel_to_data_dir, parent_T):
     p = parse_vec(node.find("p"))
     phi = parse_vec(node.find("phi"))
@@ -131,12 +142,12 @@ def process_verknuepfte(node, dirname_rel_to_data_dir, parent_T):
             assert phi >= 1.3
 
             p2, phi2 = p_phi_from_transform(local_T_new)
-            node.find("p").attrib["X"] = str(p2[0])
-            node.find("p").attrib["Y"] = str(p2[1])
-            node.find("p").attrib["Z"] = str(p2[2])
-            node.find("phi").attrib["X"] = str(phi2[0])
-            node.find("phi").attrib["Y"] = str(phi2[1])
-            node.find("phi").attrib["Z"] = str(phi2[2])
+            set_attrib_float(node.find("p"), "X", p2[0], 4)
+            set_attrib_float(node.find("p"), "Y", p2[1], 4)
+            set_attrib_float(node.find("p"), "Z", p2[2], 4)
+            set_attrib_float(node.find("phi"), "X", phi2[0], 6)
+            set_attrib_float(node.find("phi"), "Y", phi2[1], 6)
+            set_attrib_float(node.find("phi"), "Z", phi2[2], 6)
 
             # zum Testen
             # datei.set(
