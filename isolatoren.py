@@ -7,6 +7,10 @@ und schreibt die korrigierten Dateien in eine Verzeichnishierarchie unterhalb de
 import sys
 import os
 import math
+import contextlib
+import traceback
+import tkinter
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from lxml import etree
 import numpy as np
@@ -205,27 +209,129 @@ def process_file(dirname_rel_to_data_dir, filename, parent_T=np.eye(4)):
             )
 
 
+def process_input_file(filename):
+    f = os.path.abspath(filename)
+    rel_path = None
+    try:
+        if os.path.normpath(os.path.commonpath([f, DATAPATH])) == os.path.normpath(
+            DATAPATH
+        ):
+            rel_path = os.path.relpath(f, DATAPATH)
+    except ValueError:
+        pass
+    try:
+        if not rel_path and os.path.normpath(
+            os.path.commonpath([f, DATAPATH_OFFICIAL])
+        ) == os.path.normpath(DATAPATH_OFFICIAL):
+            rel_path = os.path.relpath(f, DATAPATH_OFFICIAL)
+    except ValueError:
+        pass
+
+    assert (
+        rel_path is not None
+    ), f"{f} scheint nicht im eigenen oder offiziellen Verzeichnis zu liegen"
+    process_file(*os.path.split(rel_path))
+
+
+class TextOutput:
+    def __init__(self, widget):
+        self.widget = widget
+
+    def write(self, text):
+        if text:
+            self.widget.insert(tkinter.END, text)
+            self.widget.see(tkinter.END)
+            self.widget.update_idletasks()
+
+    def flush(self):
+        pass
+
+
+def gui():
+    root = tkinter.Tk()
+    root.title("Isolatoren korrigieren")
+    root.minsize(620, 420)
+
+    frame = ttk.Frame(root, padding=8)
+    frame.pack(fill=tkinter.BOTH, expand=True)
+    frame.columnconfigure(0, weight=1)
+    frame.rowconfigure(1, weight=1)
+    frame.rowconfigure(4, weight=1)
+
+    ttk.Label(frame, text="LS3-Dateien (aus den Zusi-Datenverzeichnissen):").grid(
+        row=0, column=0, columnspan=2, sticky=tkinter.W
+    )
+    files = tkinter.Listbox(frame, selectmode=tkinter.EXTENDED, height=4)
+    files.grid(row=1, column=0, sticky="nsew")
+    scrollbar = ttk.Scrollbar(frame, orient=tkinter.VERTICAL, command=files.yview)
+    scrollbar.grid(row=1, column=1, sticky="ns")
+    files.configure(yscrollcommand=scrollbar.set)
+
+    def add_files():
+        selected = filedialog.askopenfilenames(
+            parent=root,
+            title="LS3-Dateien auswählen",
+            initialdir=DATAPATH,
+            filetypes=[("LS3-Dateien", "*.ls3"), ("Alle Dateien", "*")],
+        )
+        existing = set(files.get(0, tkinter.END))
+        for path in selected:
+            if path not in existing:
+                files.insert(tkinter.END, path)
+                existing.add(path)
+
+    def remove_files():
+        for index in reversed(files.curselection()):
+            files.delete(index)
+
+    file_buttons = ttk.Frame(frame)
+    file_buttons.grid(row=1, column=2, padx=(6, 0), sticky="n")
+    ttk.Button(file_buttons, text="Dateien hinzufügen...", command=add_files).pack(
+        fill=tkinter.X
+    )
+    ttk.Button(file_buttons, text="Auswahl entfernen", command=remove_files).pack(
+        fill=tkinter.X, pady=(4, 0)
+    )
+
+    ttk.Label(
+        frame,
+        text=f"Korrigierte Dateien werden unterhalb des aktuellen Verzeichnisses "
+        f"({os.getcwd()}) gespeichert.",
+        wraplength=590,
+    ).grid(row=2, column=0, columnspan=3, sticky="nw", pady=(6, 8))
+
+    output = scrolledtext.ScrolledText(frame, height=10, state=tkinter.NORMAL)
+    output.grid(row=4, column=0, columnspan=3, sticky="nsew")
+
+    def run():
+        paths = files.get(0, tkinter.END)
+        if not paths:
+            messagebox.showwarning(
+                "Keine Dateien ausgewählt", "Bitte zuerst LS3-Dateien auswählen.", parent=root
+            )
+            return
+
+        output.delete("1.0", tkinter.END)
+        PROCESSED_FILES.clear()
+        stream = TextOutput(output)
+        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+            for path in paths:
+                print(f"\nVerarbeite {path}")
+                try:
+                    process_input_file(path)
+                except Exception:
+                    traceback.print_exc()
+            print("Verarbeitung abgeschlossen.")
+
+    ttk.Button(frame, text="Verarbeitung starten", command=run).grid(
+        row=3, column=0, columnspan=3, sticky="ew", pady=(0, 8)
+    )
+    root.mainloop()
+
+
 if __name__ == "__main__":
-    for f in sys.argv[1:]:
-        f = os.path.abspath(f)
-        rel_path = None
-        try:
-            if os.path.normpath(os.path.commonpath([f, DATAPATH])) == os.path.normpath(
-                DATAPATH
-            ):
-                rel_path = os.path.relpath(f, DATAPATH)
-        except ValueError:
-            pass
-        try:
-            if not rel_path and os.path.normpath(
-                os.path.commonpath([f, DATAPATH_OFFICIAL])
-            ) == os.path.normpath(DATAPATH_OFFICIAL):
-                rel_path = os.path.relpath(f, DATAPATH_OFFICIAL)
-        except ValueError:
-            pass
-
-        assert (
-            rel_path is not None
-        ), f"{f} scheint nicht im eigenen oder offiziellen Verzeichnis zu liegen"
-
-        process_file(*os.path.split(rel_path))
+    if len(sys.argv) == 1:
+        gui()
+    else:
+        for f in sys.argv[1:]:
+            process_input_file(f)
