@@ -19,9 +19,9 @@ from scipy.spatial.transform import Rotation as R
 from zusicommon import zusicommon
 
 DATAPATH = zusicommon.get_zusi_data_path()
-print(f"Datenverzeichnis eigene Daten: {DATAPATH}")
+print("Datenverzeichnis eigene Daten: {}".format(DATAPATH))
 DATAPATH_OFFICIAL = zusicommon.get_zusi_data_path_official()
-print(f"Datenverzeichnis offizielle Daten: {DATAPATH_OFFICIAL}")
+print("Datenverzeichnis offizielle Daten: {}".format(DATAPATH_OFFICIAL))
 PROCESSED_FILES = set()
 DRY_RUN = False
 
@@ -109,7 +109,7 @@ def process_verknuepfte(node, dirname_rel_to_data_dir, parent_T):
     phi = parse_vec(node.find("phi"))
 
     local_T = transform_from_p_phi(p, phi)
-    world_T = parent_T @ local_T
+    world_T = np.matmul(parent_T, local_T)
     world_T_only_rot = np.eye(4)
     world_T_only_rot[:3, :3] = world_T[:3, :3]
 
@@ -121,10 +121,10 @@ def process_verknuepfte(node, dirname_rel_to_data_dir, parent_T):
     changed = False
     up_vector = UP_VECTORS.get(filename.lower())
     if up_vector is not None:
-        transformed = world_T_only_rot @ up_vector
+        transformed = np.matmul(world_T_only_rot, up_vector)
         transformed /= transformed[3]
         phi = angle(transformed[:3], np.array([0, 0, 1]))
-        print(f"{filename}, phi={math.degrees(phi)} deg")
+        print("{}, phi={} deg".format(filename, math.degrees(phi)))
         if phi < 1.3:
             # Turn around: Move by 0.60230 units along local y and rotate 180deg around local z.
             translation = np.eye(4)
@@ -133,16 +133,16 @@ def process_verknuepfte(node, dirname_rel_to_data_dir, parent_T):
             rotation[:3, :3] = R.from_euler("z", 180, degrees=True).as_matrix()
 
             # Local-space transform: first move, then rotate
-            local_T_new = local_T @ rotation @ translation
+            local_T_new = np.matmul(np.matmul(local_T, rotation), translation)
 
             # Sanity check
-            world_T_new = parent_T @ local_T_new
+            world_T_new = np.matmul(parent_T, local_T_new)
             world_T_new_only_rot = np.eye(4)
             world_T_new_only_rot[:3, :3] = world_T_new[:3, :3]
-            transformed_new = world_T_new_only_rot @ up_vector
+            transformed_new = np.matmul(world_T_new_only_rot, up_vector)
             transformed_new /= transformed_new[3]
             phi = angle(transformed_new[:3], np.array([0, 0, 1]))
-            print(f" -> phi={math.degrees(phi)} deg")
+            print(" -> phi={} deg".format(math.degrees(phi)))
             assert phi >= 1.3
 
             p2, phi2 = p_phi_from_transform(local_T_new)
@@ -164,7 +164,7 @@ def process_verknuepfte(node, dirname_rel_to_data_dir, parent_T):
         process_file(dirname_rel_to_data_dir, filename, world_T)
     else:
         filename = filename.lstrip("\\").replace("\\", os.sep)
-        process_file(*os.path.split(filename), world_T)
+        process_file(*os.path.split(filename), parent_T=world_T)
 
     return changed
 
@@ -183,7 +183,7 @@ def process_file(dirname_rel_to_data_dir, filename, parent_T=np.eye(4)):
         absolute_path = os.path.join(DATAPATH_OFFICIAL, xml_path_rel)
         assert os.path.isfile(
             absolute_path
-        ), f"{xml_path_rel} not resolved: neither {absolute_path_try1} nor {absolute_path} exist"
+        ), "{} not resolved: neither {} nor {} exist".format(xml_path_rel, absolute_path_try1, absolute_path)
 
     parser = etree.XMLParser(remove_blank_text=False, strip_cdata=False)
     tree = etree.parse(absolute_path, parser)
@@ -200,9 +200,9 @@ def process_file(dirname_rel_to_data_dir, filename, parent_T=np.eye(4)):
     if changed:
         dest_path = os.path.join(dirname_rel_to_data_dir, filename)
         if DRY_RUN:
-            print(f"would write {dest_path}")
+            print("would write {}".format(dest_path))
         else:
-            print(f"write {dest_path}")
+            print("write {}".format(dest_path))
             os.makedirs(dirname_rel_to_data_dir, exist_ok=True)
             tree.write(
                 dest_path, encoding="UTF-8", xml_declaration=True, pretty_print=False
@@ -229,7 +229,7 @@ def process_input_file(filename):
 
     assert (
         rel_path is not None
-    ), f"{f} scheint nicht im eigenen oder offiziellen Verzeichnis zu liegen"
+    ), "{} scheint nicht im eigenen oder offiziellen Verzeichnis zu liegen".format(f)
     process_file(*os.path.split(rel_path))
 
 
@@ -295,8 +295,8 @@ def gui():
 
     ttk.Label(
         frame,
-        text=f"Korrigierte Dateien werden unterhalb des aktuellen Verzeichnisses "
-        f"({os.getcwd()}) gespeichert.",
+        text="Korrigierte Dateien werden unterhalb des aktuellen Verzeichnisses "
+        "({}) gespeichert.".format(os.getcwd()),
         wraplength=590,
     ).grid(row=2, column=0, columnspan=3, sticky="nw", pady=(6, 8))
 
@@ -316,7 +316,7 @@ def gui():
         stream = TextOutput(output)
         with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
             for path in paths:
-                print(f"\nVerarbeite {path}")
+                print("\nVerarbeite {}".format(path))
                 try:
                     process_input_file(path)
                 except Exception:
