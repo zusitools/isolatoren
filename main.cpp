@@ -21,6 +21,7 @@
 #include <iomanip>
 #include <iostream>
 #include <set>
+#include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -263,7 +264,7 @@ private:
         const fs::path source = resolveSource(relative);
         pugi::xml_document document;
         const pugi::xml_parse_result result =
-            document.load_file(source.string().c_str(), (pugi::parse_default | pugi::parse_ws_pcdata) & ~(pugi::parse_eol | pugi::parse_wconv_attribute) );
+            document.load_file(source.string().c_str(), (pugi::parse_default | pugi::parse_ws_pcdata));
 
         if (!result) {
             throw std::runtime_error(
@@ -295,8 +296,10 @@ private:
             document.insert_child_after(pugi::node_pcdata, decl).set_value("\n");
             document.append_child(pugi::node_pcdata).set_value("\n");
 
-            if (!document.save_file(destination.string().c_str(), "", pugi::format_raw | pugi::format_write_bom | pugi::format_save_file_text,
-                                    pugi::encoding_utf8)) {
+            std::ofstream out(destination.string());
+            document.save(out, "", pugi::format_raw | pugi::format_write_bom | pugi::format_save_file_text,
+                                  pugi::encoding_utf8);
+            if (!out.good()) {
                 throw std::runtime_error("Kann Ausgabedatei nicht schreiben: " + destination.string());
             }
             logger_("Geschrieben: " + destination.string());
